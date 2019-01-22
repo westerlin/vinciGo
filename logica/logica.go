@@ -84,6 +84,16 @@ func (l Scenario) Output() string {
 	return output
 }
 
+func (l ScenarioList) hasParameter(paramname string) bool {
+	if (len(l)>0) {
+		for _, scene := range l {
+			_, ok := scene[paramname]
+			return ok
+		}
+	}
+	return false
+}
+
 // Output for Scenario
 func (l ScenarioList) Output() string {
 	var output = "[\n"
@@ -266,25 +276,66 @@ func isParameter(text string) (string, bool) {
 }
 
 // Parameters collects all scenarios from given Logica Path
-func (l *Logica) Parameters( path string, scene Scenario, space ScenarioList) ScenarioList {
+func (l *Logica) Parameters( path string, space ScenarioList ) ScenarioList {
+	if len(space)==0 {
+		var emptyScene = CreateScenario()
+		return l.parameters(path,emptyScene,space)
+	} else {
+		var tmp = CreateScenarioList()
+		for _,scene := range space {
+			tmp = l.parameters(path,scene,tmp)
+			//log.Println(tmp.Output())
+		}
+		space = tmp
+	}
+	return space
+}
+
+func (l *Logica) parameters( path string, scene Scenario, space ScenarioList) ScenarioList {
 	prefix,branch,nextpath := find(path,PatternLogicaNodeSuffix)
 	if (prefix != ""){
+		// There is a prefix and thus a branch
 		if branch, ok := isParameter(branch); ok {
-			if l.state == LogicaLoggingOff {l.visibleChildren = len(l.Children)}
-			if prefix != "!" || l.visibleChildren == 1 {
-				for key, child := range l.Children {
-					if (child.origin != LogicaDeleted || l.state == LogicaLoggingOff) {
-						scene[branch] = key
-						space = child.Parameters(nextpath,scene,space)
+			//The branch is an parameter
+			/*
+			if space.hasParameter(branch) {
+				// We already have the parameter - removal of all scenes not in branch dimension
+				for _, scene := range space {
+					parmvar := scene[branch]
+					child := l.Children[parmvar]
+					if child != nil {
+						// only add children in paramspace and in child dimension
+						child.Parameters(nextpath,scene,space)
 					}
 				}
-			}
+				
+			} else {*/
+				// New parameter - defined by branch dimensions
+				if l.state == LogicaLoggingOff {l.visibleChildren = len(l.Children)}
+				if prefix != "!" || l.visibleChildren == 1 {
+					for key, child := range l.Children {
+						if (child.origin != LogicaDeleted || l.state == LogicaLoggingOff) {
+							value,ok := scene[branch]
+							if ok==false || (key==value) {
+								//log.Println("true," + scene.Output())
+								var scene2 = scene.Copy()
+								scene2[branch] = key
+								space = child.parameters(nextpath,scene2,space)
+							} else {
+								//log.Println("false," + scene.Output())
+							}
+						}
+					}
+				}
+			//}
 		} else if l.hasChild(branch){
+			//The branch is a child and we continue down the branch
 			if (prefix != "!" || l.visibleChildren == 1){
-				space = l.Children[branch].Parameters(nextpath, scene, space)
+				space = l.Children[branch].parameters(nextpath, scene, space)
 			}
 		}
 	} else {
+		// We are at end of branch - at a leaf - and add scene
 		if len(scene) > 0 {
 			space = append(space,scene.Copy())
 		}
